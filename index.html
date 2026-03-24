@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>#ODDMUC26 LOD Workshop</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 2rem;
+            line-height: 1.5;
+            max-width: 960px;
+            margin-inline: auto;
+            font-family: "Segoe UI", sans-serif;
+        }
+        h1, h2 {
+            margin-bottom: 0.5rem;
+        }
+        p {
+            margin-top: 0;
+        }
+        section {
+            border: 1px solid #8884;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            margin: 0.75rem 0 0.25rem;
+            font-weight: 600;
+        }
+        input, textarea, button {
+            font: inherit;
+        }
+        input[type="text"],
+        input[type="password"],
+        textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 0.75rem;
+            border-radius: 8px;
+            border: 1px solid #8886;
+        }
+        textarea {
+            min-height: 14rem;
+            resize: vertical;
+        }
+        button {
+            margin-top: 1rem;
+            padding: 0.75rem 1rem;
+            border: 0;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-break: break-word;
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid #8884;
+            overflow-x: auto;
+        }
+        .status {
+            margin-top: 0.75rem;
+            font-weight: 600;
+        }
+        #graphs-list {
+            margin: 1rem 0 0;
+            padding-left: 1.25rem;
+        }
+        #graphs-list li {
+            margin-bottom: 0.4rem;
+        }
+        .graph-count {
+            color: #888;
+            font-size: 0.95em;
+        }
+        #yasgui .yasgui .controlbar .tabContextButton {
+            display: none;
+        }
+        #yasgui .yasgui .controlbar {
+            margin-bottom: 0.75rem;
+            margin-left: -0.61rem;
+        }
+        #yasgui .yasgui .addTab {
+            margin-top: 0;
+        }
+        .toolbar-picker {
+            margin-bottom: 0.75rem;
+        }
+        .toolbar-picker select {
+            font: inherit;
+            padding: 0.5rem 0.75rem;
+            border-radius: 8px;
+            border: 1px solid #8886;
+            min-width: 320px;
+        }
+        .top-right-link {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            font-size: 0.9rem;
+            color: #888;
+            text-decoration: none;
+        }
+        .top-right-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+    <link rel="stylesheet" href="https://unpkg.com/@triply/yasgui/build/yasgui.min.css" />
+    <script src="https://unpkg.com/@triply/yasgui/build/yasgui.min.js"></script>
+</head>
+<body>
+<h1 style="color: lightgray">#ODDMUC26 LOD Workshop</h1>
+<a class="top-right-link" href="https://github.com/benjaminaaron/lod-starter-kit" target="_blank" rel="noopener noreferrer">GitHub</a>
+<section>
+    <h2>Existing graphs</h2>
+    <div id="graphs-status" class="status"></div>
+    <ul id="graphs-list"></ul>
+</section>
+<section>
+    <h2>Add a new graph</h2>
+    <form id="upload-form">
+        <label for="graph">Name</label>
+        <div style="position:relative; display:flex; align-items:center;">
+            <span style="position:absolute; left:0.75rem; color:#888; font-size:0.9em; pointer-events:none;">
+                odd:workshop_
+            </span>
+            <input
+                id="graph"
+                name="graph"
+                type="text"
+                style="padding-left: 6.9rem;"
+                required
+            />
+        </div>
+        <label for="file">Turtle file</label>
+        <input id="file" name="file" type="file" accept=".ttl,text/turtle" required />
+        <br/>
+        <button type="submit">Upload</button>
+    </form>
+    <div id="upload-status" class="status"></div>
+</section>
+
+<section>
+    <h2>Run SPARQL</h2>
+    <div class="toolbar-picker" style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span style="color:#888;">Endpoints:</span>
+            <select id="endpoint-select">
+                <option value="https://oddmuc26-workshop-proxy.benjamin-degenhart.workers.dev/sparql">workshop triplestore</option>
+                <option value="https://open.bydata.de/api/sparql">open.bydata</option>
+                <option value="https://www.govdata.de/sparql">GovData</option>
+                <option value="https://data.europa.eu/sparql">data.europa.eu</option>
+            </select>
+        </div>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span style="color:#888;">Queries:</span>
+            <select id="query-select">
+                <option value="">Select a query</option>
+            </select>
+        </div>
+    </div>
+    <div id="yasgui"></div>
+</section>
+
+<script type="module">
+    import { queries } from "./queries.js"
+
+    const WORKER_BASE_URL = "https://oddmuc26-workshop-proxy.benjamin-degenhart.workers.dev"
+
+    const uploadForm = document.getElementById("upload-form")
+    const uploadStatus = document.getElementById("upload-status")
+    const graphsStatus = document.getElementById("graphs-status")
+    const graphsList = document.getElementById("graphs-list")
+    const endpointSelect = document.getElementById("endpoint-select")
+    const querySelect = document.getElementById("query-select")
+
+    async function loadGraphs() {
+        graphsStatus.textContent = "Loading graphs..."
+        graphsList.innerHTML = ""
+        const query = `
+            PREFIX odd: <https://open.bydata.de/oddmuc26#>
+            SELECT ?graphLocalName (COUNT(*) AS ?count) WHERE {
+                GRAPH ?g { ?s ?p ?o }
+                FILTER STRSTARTS(STR(?g), STR(odd:workshop_))
+                BIND(STRAFTER(STR(?g), STR(odd:)) AS ?graphLocalName)
+            }
+            GROUP BY ?graphLocalName
+            ORDER BY LCASE(STR(?graphLocalName))`
+        try {
+            const response = await fetch(`${WORKER_BASE_URL}/sparql`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/sparql-results+json"
+                },
+                body: JSON.stringify({ query })
+            })
+
+            if (!response.ok) {
+                const text = await response.text()
+                graphsStatus.textContent = `Failed to load graphs (${response.status}): ${text}`
+                return
+            }
+
+            const data = await response.json()
+            const bindings = data.results?.bindings || []
+
+            if (!bindings.length) {
+                graphsStatus.textContent = "No named graphs found."
+                return
+            }
+
+            graphsStatus.textContent = "" // `${bindings.length} graphs found:`
+
+            for (const binding of bindings) {
+                const graphName = binding.graphLocalName?.value || "[unknown graph]"
+                const count = binding.count?.value || "0"
+                const item = document.createElement("li")
+                const graphIri = `https://open.bydata.de/oddmuc26#${graphName}`
+                const downloadUrl = `${WORKER_BASE_URL}/download?graph=${encodeURIComponent(graphIri)}`
+                item.innerHTML = `<span class="graph-count">odd:</span><strong>${graphName}</strong> <span class="graph-count">(${count} triples)</span> <a class="graph-count" href="${downloadUrl}" download="${graphName}.nt">download as n-triples</a>`
+                graphsList.appendChild(item)
+            }
+        } catch (error) {
+            graphsStatus.textContent = `Failed to load graphs: ${error.message}`
+        }
+    }
+
+    uploadForm.addEventListener("submit", async (event) => {
+        event.preventDefault()
+        uploadStatus.textContent = "Uploading..."
+
+        const formData = new FormData(uploadForm)
+        const prefix = "https://open.bydata.de/oddmuc26#workshop_"
+        const graphName = formData.get("graph")
+        formData.set("graph", prefix + graphName)
+
+        try {
+            const response = await fetch(`${WORKER_BASE_URL}/upload`, {
+                method: "POST",
+                body: formData
+            })
+
+            const text = await response.text()
+            uploadStatus.textContent = response.ok
+                ? `Upload successful: ${text || "OK"}`
+                : `Upload failed (${response.status}): ${text}`
+        } catch (error) {
+            uploadStatus.textContent = `Upload failed: ${error.message}`
+        }
+    })
+
+    loadGraphs()
+
+    const YasguiCtor = window.Yasgui || window.YASGUI
+    if (!YasguiCtor) throw new Error("YASGUI failed to load from CDN")
+
+    const yasgui = new YasguiCtor(document.getElementById("yasgui"), {
+        requestConfig: { method: "POST" },
+        yasqe: { lineNumbers: true }
+    })
+    if (!yasgui.getTab().getEndpoint() || yasgui.getTab().getEndpoint() === "https://dbpedia.org/sparql") {
+        yasgui.getTab().setEndpoint(`${WORKER_BASE_URL}/sparql`)
+    }
+
+    endpointSelect.addEventListener("change", () => yasgui.getTab().setEndpoint(endpointSelect.value))
+
+    for (const key in queries) {
+        const option = document.createElement("option")
+        option.value = key
+        option.textContent = key
+        querySelect.appendChild(option)
+    }
+
+    querySelect.addEventListener("change", () => {
+        const selected = querySelect.value
+        if (!selected) return
+        const q = queries[selected].trim()
+        if (q) yasgui.getTab().getYasqe().setValue(q)
+    })
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+name = "oddmuc26-workshop-proxy"
+main = "cloudflare-worker.js"
+compatibility_date = "2026-03-20"
+[observability]
+[observability.logs]
+enabled = true
+invocation_logs = true

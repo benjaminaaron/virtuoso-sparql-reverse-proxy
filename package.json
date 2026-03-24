@@ -1,0 +1,6 @@
+{
+  "name": "virtuoso-sparql-reverse-proxy",
+  "devDependencies": {
+    "wrangler": "^4.76.0"
+  }
+}
